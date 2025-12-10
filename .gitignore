@@ -353,3 +353,5 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
+
+.DS_Store
