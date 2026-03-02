@@ -6,3 +6,4 @@
 
 *.qmd.tex
 
+.DS_Store
