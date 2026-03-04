@@ -65,6 +65,7 @@ minted:
 
 format:
   pdf:
+    mermaid-format: png
     keep-tex: false
     ### Document
     documentclass: phdthesr
