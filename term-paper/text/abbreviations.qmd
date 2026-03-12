@@ -3,11 +3,17 @@
 ## Англоязычные сокращения {.unnumbered}
 
 AQM  ---  Active Queue Management --- активное управление очередью 
+
 WSL --- Windows Subsystem for Linux
+
 CLI --- Command Line Interface --- интерфейс командной строки
+
 IaC --- Infrastructure as Code --- инфраструктура как код
 
 ## Русскоязычные сокращения {.unnumbered}
 
 ПМП --- Планетарный механизм поворота 
 
+ОС --- Операционная система
+
+ВМ --- Виртуальная машина
