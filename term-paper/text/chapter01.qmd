@@ -49,6 +49,7 @@ $$
 ```{mermaid}
 %%| label: fig-seirs-diagram
 %%| fig-cap: "Диаграмма эволюции особи в модели SEIRS"
+%%| fig-width: 5
 
 flowchart LR
     S["S (susceptible)"]
@@ -95,6 +96,7 @@ $$
 ```{mermaid}
 %%| label: fig-seirs-nimfa-diagram
 %%| fig-cap: "Диаграмма эволюции особи в модели SEIRS-NIMFA"
+%%| fig-width: 4
 
 flowchart LR
     S["S (susceptible)<br/>x<sub>i</sub>(t)"]

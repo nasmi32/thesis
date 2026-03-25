@@ -26,8 +26,6 @@ book:
     - text/abbreviations.qmd
   appendices:
     - text/appendix01.qmd
-    - text/appendix02.qmd
-    - text/appendix03.qmd
 
 lang: ru
 
