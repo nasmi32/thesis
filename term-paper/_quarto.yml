@@ -69,7 +69,7 @@ format:
     documentclass: phdthesr
     # classoption: "font=times"
     papersize: a4
-    fontsize: 12pt
+    fontsize: 13pt
     linestretch: 1.5
     toc: true
     number-sections: true
