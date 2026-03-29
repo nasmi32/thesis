@@ -63,7 +63,6 @@ minted:
 
 format:
   pdf:
-    mermaid-format: png
     keep-tex: false
     ### Document
     documentclass: phdthesr
@@ -95,6 +94,8 @@ format:
     csquotes: true
     indent: true
     # include-in-header:
+    #   - \usepackage{fvextra}
+    #   - \fvset{breaklines, breakanywhere}
     #   - file: _resources/tex/preamble.tex
     # - file: _resources/tex/class.tex
     # template-partials:
