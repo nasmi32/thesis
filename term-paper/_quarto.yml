@@ -19,6 +19,7 @@ book:
   search: false
   chapters:
     - index.qmd
+    # - text/intro.qmd
     - text/chapter01.qmd
     - text/chapter02.qmd
     - text/chapter03.qmd
@@ -63,6 +64,7 @@ minted:
 
 format:
   pdf:
+    mermaid-format: png
     keep-tex: false
     ### Document
     documentclass: phdthesr
@@ -94,11 +96,11 @@ format:
     csquotes: true
     indent: true
     # для разбиения ссылок 
-    include-in-header:
-      text: |
-        \usepackage{xurl}
-        \usepackage{microtype}
-        \sloppy
+    # include-in-header:
+    #   text: |
+    #     \usepackage{xurl}
+    #     \usepackage{microtype}
+    #     \sloppy
     # include-in-header:
     #   - \usepackage{fvextra}
     #   - \fvset{breaklines, breakanywhere}
