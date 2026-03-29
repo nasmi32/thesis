@@ -124,6 +124,7 @@ bash -c "$(curl -sL https://get.containerlab.dev)"
 Также можно установить официальные выпуски Containerlab через публичный репозиторий APT/YUM.
 
 **APT**
+
 ```shell
 echo "deb [trusted=yes] https://netdevops.fury.site/apt/ /" | \
 sudo tee -a /etc/apt/sources.list.d/netdevops.list
@@ -132,6 +133,7 @@ sudo apt update && sudo apt install containerlab
 ```
 
 **YUM**
+
 ```shell
 sudo yum-config-manager --add-repo=https://netdevops.fury.site/yum/ && \ [](https://containerlab.dev/install/#__codelineno-9-2)echo "gpgcheck=0" | sudo tee -a /etc/yum.repos.d/netdevops.fury.site_yum_.repo [](https://containerlab.dev/install/#__codelineno-9-3)[](https://containerlab.dev/install/#__codelineno-9-4)sudo yum install containerlab
 ```

@@ -30,6 +30,28 @@ flowchart LR
     M --> V
 ```
 
+```{mermaid}
+graph TD
+    A[(Network A)]
+
+    subgraph Hosts
+        pc1((pc1))
+        pc2((pc2))
+        pc3((pc3))
+        pc4((pc4))
+        pc5((pc5))
+        dots["..."]
+        pc100((pc100))
+    end
+
+    pc1 --- A
+    pc2 --- A
+    pc3 --- A
+    pc4 --- A
+    pc5 --- A
+    pc100 --- A
+```
+
 Kathará предоставляет CLI (Command Line Interface) для управления модулями. Команды делятся на две категории:
 
 - с префиксом v- (vstart, vclean, vconfig). Позволяют запускать отдельные устройства, обеспечивая детальный контроль над их конфигурацией;

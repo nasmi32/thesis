@@ -63,7 +63,6 @@ minted:
 
 format:
   pdf:
-    mermaid-format: png
     keep-tex: false
     ### Document
     documentclass: phdthesr
@@ -101,6 +100,8 @@ format:
         \usepackage{microtype}
         \sloppy
     # include-in-header:
+    #   - \usepackage{fvextra}
+    #   - \fvset{breaklines, breakanywhere}
     #   - file: _resources/tex/preamble.tex
     # - file: _resources/tex/class.tex
     # template-partials:
