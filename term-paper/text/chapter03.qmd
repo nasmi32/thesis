@@ -84,6 +84,7 @@ Kathará используется только из powershell, запускат
 
 Containerlab распространяется как Linux-пакет deb/rpm/apk для архитектур amd64 и arm64 и может быть установлен на любой дистрибутив Debian- или RHEL-подобного типа.
 Для успешной работы Containerlab необходимо заранее:
+
 - Установить Docker или Linux-сервер. При выборе параметров ВМ следует использовать более одного виртуального процессора и не отключать IPv6 в ядре. Объем оперативной памяти зависит от размера лаборатории;
 - Иметь права `sudo` для запуска Containerlab;
 - Загрузить образы контейнеров. Если образы не существуют локально, Containerlab попытается загрузить их во время выполнения.
@@ -94,13 +95,13 @@ Containerlab распространяется как Linux-пакет deb/rpm/ap
 
 Чтобы установить все компоненты сразу, выполните следующую команду на любой из поддерживаемых ОС:
 
-```
+```shell
 curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"
 ```
 
 По умолчанию скрипт также настроит sshd в системе, чтобы неизвестные ключи не блокировали попытки подключения по SSH. Опцию можно отключить, установив переменную окружения SETUP_SSHD в значение `false` перед запуском приведённой выше команды. Переменная окружения устанавливается и экспортируется следующей командой:
 
-```
+```shell
 export SETUP_SSHD="false"
 ```
 
@@ -110,20 +111,20 @@ Containerlab также настраивается для работы без su
 
 Чтобы установить отдельный компонент, укажите имя функции в качестве аргумента скрипта. Например, чтобы установить только docker:
 
-```
+```shell
 curl -sL https://containerlab.dev/setup | sudo -E bash -s "install-docker"
 ```
 
 Если вам не надо устанавливать дополнительные инструменты, а необходим лишь один Containerlab можно воспользоваться скриптом установки. Например, чтобы скачать и установить последнюю версию:
 
-```
+```shell
 bash -c "$(curl -sL https://get.containerlab.dev)"
 ```
 
 Также можно установить официальные выпуски Containerlab через публичный репозиторий APT/YUM.
 
 **APT**
-```
+```shell
 echo "deb [trusted=yes] https://netdevops.fury.site/apt/ /" | \
 sudo tee -a /etc/apt/sources.list.d/netdevops.list
 
@@ -131,7 +132,7 @@ sudo apt update && sudo apt install containerlab
 ```
 
 **YUM**
-```
+```shell
 sudo yum-config-manager --add-repo=https://netdevops.fury.site/yum/ && \ [](https://containerlab.dev/install/#__codelineno-9-2)echo "gpgcheck=0" | sudo tee -a /etc/yum.repos.d/netdevops.fury.site_yum_.repo [](https://containerlab.dev/install/#__codelineno-9-3)[](https://containerlab.dev/install/#__codelineno-9-4)sudo yum install containerlab
 ```
 
@@ -141,14 +142,14 @@ sudo yum-config-manager --add-repo=https://netdevops.fury.site/yum/ && \ [](http
 
 Для того, чтобы развернуть Containerlab на Windows, требуется использовать WSL (Windows Subsystem Linux). WSL позволяет пользователям запускать легковесные Linux ВМ внутри Windows. В Windows 10 и 11 для его установки достаточно ввести следующую команду в powershell и перезагрузить систему:
 
-```powershell
+```shell
 wsl --install
 ```
 
 Рассмотрим установку Containerlab. Загрузим файл `.wsl` со страницы релизов https://github.com/srl-labs/wsl-containerlab/releases/tag/0.69.3-1.0. Просто дважды щелкнем по файлу, и дистрибутив будет установлен. Альтернативно его можно установить с помощью` wsl -install -from-file C:\path\to\clab.wsl`. Containerlab должен появиться как программа в меню "Пуск".
 Запустим Containerlab:
 
-```powershell
+```shell
 wsl -d Containerlab
 ```
 
@@ -165,14 +166,14 @@ wsl -d Containerlab
 3. Внутри OrbStack-Linux выполнить стандартную установку для Linux: `curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"`. Эта команда установит Docker, Docker Compose, GitHub CLI и сам Containerlab.
 4. После завершения выйти и войти снова, чтобы активировать группы пользователей, и проверить:
 
-```
+```shell
 clab version
 docker ps
 ```
 
 5. На ARM-Mac рекомендуется использовать контейнерные образы, собранные под архитектуру arm64. Проверить это можно командой:
 
-```
+```shell
 docker image inspect <image> -f '{{.Architecture}}'
 ```
 
@@ -201,7 +202,7 @@ docker image inspect <image> -f '{{.Architecture}}'
 : Глобальные константы {#tbl-constants}
 
 | Константа           |  Значение   |                         Описание                              |
-|----------------|-------------|--------------------------------------------------------------------|
+|----------------------|-------------|--------------------------------------------------------------------|
 | PORT           | 4000        | TCP-порт для обмена состояниями между узлами                       |
 | SUBNET         | 10.0.0.0/24 | Сканируемая подсеть                                                |
 | PATIENT_ZERO   | 10.0.0.1    | Нулевой пациент                                                    |

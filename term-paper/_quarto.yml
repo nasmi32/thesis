@@ -94,6 +94,12 @@ format:
     white-space: pre-wrap
     csquotes: true
     indent: true
+    # для разбиения ссылок 
+    include-in-header:
+      text: |
+        \usepackage{xurl}
+        \usepackage{microtype}
+        \sloppy
     # include-in-header:
     #   - file: _resources/tex/preamble.tex
     # - file: _resources/tex/class.tex
